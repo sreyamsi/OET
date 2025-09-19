@@ -1,0 +1,137 @@
+Single endpoint for both Status and Progress:
+
+Goalcontroller:
+
+package com.example.outreach_education_tracker.controller;
+
+import com.example.outreach_education_tracker.dto.GoalDto;
+import com.example.outreach_education_tracker.service.GoalService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/goals")
+public class GoalController {
+
+    @Autowired
+    private GoalService goalService;
+
+    // Create a goal
+    @PostMapping
+    public ResponseEntity<GoalDto> createGoal(@RequestBody GoalDto dto) {
+        return ResponseEntity.ok(goalService.createGoal(dto));
+    }
+
+    // Get all goals for a student
+    @GetMapping("/student/{studentId}")
+    public ResponseEntity<List<GoalDto>> getGoalsForStudent(@PathVariable Integer studentId) {
+        return ResponseEntity.ok(goalService.getGoalsForStudent(studentId));
+    }
+
+    // Update progress or status
+    @PutMapping("/{goalId}")
+    public ResponseEntity<GoalDto> updateGoalProgress(
+            @PathVariable Integer goalId,
+            @RequestParam(required = false) Integer progressPercentage,
+            @RequestParam(required = false) String status) {
+        return ResponseEntity.ok(goalService.updateGoalProgress(goalId, progressPercentage, status));
+    }
+}
+
+
+
+Goalservice:
+
+package com.example.outreach_education_tracker.service;
+
+import com.example.outreach_education_tracker.dto.GoalDto;
+import com.example.outreach_education_tracker.entity.Goal;
+import com.example.outreach_education_tracker.entity.Priority;
+import com.example.outreach_education_tracker.entity.Status;
+import com.example.outreach_education_tracker.entity.User;
+import com.example.outreach_education_tracker.repository.GoalRepository;
+import com.example.outreach_education_tracker.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class GoalService {
+
+    @Autowired
+    private GoalRepository goalRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    // Create a goal
+    public GoalDto createGoal(GoalDto dto) {
+        User student = userRepository.findById(dto.getStudentId())
+                .orElseThrow(() -> new EntityNotFoundException("Student not found"));
+        User creator = userRepository.findById(dto.getCreatorId())
+                .orElseThrow(() -> new EntityNotFoundException("Creator not found"));
+
+        Goal goal = new Goal();
+        goal.setTitle(dto.getTitle());
+        goal.setDescription(dto.getDescription());
+        goal.setDueDate(dto.getDueDate());
+        goal.setProgressPercentage(dto.getProgressPercentage() != null ? dto.getProgressPercentage() : 0);
+        goal.setStatus(Status.valueOf(dto.getStatus().toUpperCase()));
+        goal.setPriority(Priority.valueOf(dto.getPriority().toUpperCase()));
+        goal.setStudent(student);
+        goal.setCreator(creator);
+
+        Goal saved = goalRepository.save(goal);
+        return toDto(saved);
+    }
+
+    // Get all goals for a student
+    public List<GoalDto> getGoalsForStudent(Integer studentId) {
+        return goalRepository.findByStudent_UserId(studentId)
+                .stream()
+                .map(this::toDto)
+                .collect(Collectors.toList());
+    }
+
+    // Update progress/status
+    public GoalDto updateGoalProgress(Integer goalId, Integer progressPercentage, String status) {
+        Goal goal = goalRepository.findById(goalId)
+                .orElseThrow(() -> new EntityNotFoundException("Goal not found"));
+
+        if (progressPercentage != null) {
+            goal.setProgressPercentage(progressPercentage);
+        }
+        if (status != null) {
+            goal.setStatus(Status.valueOf(status.toUpperCase()));
+        }
+
+        Goal updated = goalRepository.save(goal);
+        return toDto(updated);
+    }
+
+    private GoalDto toDto(Goal goal) {
+        return new GoalDto(
+                goal.getGoalId(),
+                goal.getTitle(),
+                goal.getDescription(),
+                goal.getDueDate(),
+                goal.getProgressPercentage(),
+                goal.getStatus().name(),
+                goal.getPriority().name(),
+                goal.getStudent().getUserId(),
+                goal.getCreator().getUserId()
+        );
+    }
+}
+
+
+Update Goal Progress / Status:
+
+PUT:
+http://localhost:8080/api/goals/{goalId}?progressPercentage=80&status=IN_PROGRESS
